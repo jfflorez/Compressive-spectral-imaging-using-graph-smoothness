@@ -14,6 +14,9 @@ authors:
     family-names: Florez-Ospina
     email: juanflo16@gmail.com
     orcid: 'https://orcid.org/0000-0001-5971-9042'
+  - given-names: Abdullah K. M.
+    family-names: Alrushud
+    email: alrushud@udel.edu
   - given-names: Daniel L.
     family-names: Lau
     email: dllau@uky.edu
@@ -21,3 +24,4 @@ authors:
     family-names: Arce
     email: arce@udel.edu
     orcid: 'https://orcid.org/0000-0001-7163-7111'
+  - {}
