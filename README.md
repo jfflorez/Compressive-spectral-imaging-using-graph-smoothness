@@ -4,7 +4,7 @@ This repository contains both real and simulated datasets to test the methods an
 
 1. **Block-based spectral image reconstruction using smoothness on graphs.**
 
-Future updates will include Matlab and Python implementations of reconstruction methods and usage examples.
+Python implementations of reconstruction methods and usage examples are still being refined so please check constantly for updates.
 
 ## Citation
 
