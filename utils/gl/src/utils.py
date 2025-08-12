@@ -14,7 +14,7 @@ import warnings
 from numpy import linalg as LA
 from scipy.sparse import coo_matrix, isspmatrix, find
 from scipy.spatial.distance import squareform
-
+from scipy.special import comb
 def isvector(w):
     return w.ndim == 1 or 1 in np.shape(w)
 def iscolumn(w):
@@ -148,11 +148,11 @@ def squareform_sp(w):
         ind_i = ind_i[ind_upper]
         ind_j = ind_j[ind_upper]
         s = s[ind_upper]
-        
         # compute new (vector) index from (i,j) (matrix) indices
         # new_ind = (ind_j + (ind_i-1)*n - ind_i*(ind_i+1)/2).astype('int32')
-        new_ind = (n*(n-1)/2 - (n-ind_i)*(n-ind_i-1)/2 + ind_j - ind_i - 1).astype('int32')
-        w = coo_matrix((s, (new_ind, np.zeros(new_ind.shape).astype('int32'))), shape=(int(n*(n-1)/2), 1))
+        #new_ind = (n*(n-1)/2 - (n-ind_i)*((n-ind_i)-1)/2 + ind_j - ind_i - 1).astype('int64')
+        new_ind = (comb(n,2) - comb(n-ind_i,2) + ind_j - ind_i - 1).astype('int64')
+        w = coo_matrix((s, (new_ind, np.zeros(new_ind.shape, dtype=np.int64))), shape=(int(n*(n-1)/2), 1))
         #w = coo_matrix(s)
         # w = sparse(new_ind, 1, s, n*(n-1)/2, 1);
     
