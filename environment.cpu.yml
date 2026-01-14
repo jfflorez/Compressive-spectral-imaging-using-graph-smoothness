@@ -1,0 +1,20 @@
+name: graphcsi_env
+channels:
+  - pytorch
+  - pyg
+  - conda-forge
+dependencies:
+  - python=3.11.9
+  - jupyter  
+  - ipykernel
+  - numpy  
+  - scipy
+  - h5py
+  - pandas
+  - matplotlib=3.8.3
+  - scikit-image
+  - sphinx
+  - pytorch::pytorch
+  - pytorch::torchvision
+  - pytorch::cpuonly
+  - pyg::pytorch-cluster
