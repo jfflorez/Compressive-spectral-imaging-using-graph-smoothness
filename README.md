@@ -6,6 +6,22 @@ This repository contains both real and simulated datasets to test the methods an
 
 Python implementations of reconstruction methods and usage examples are still being refined so please check constantly for updates.
 
+## Project requirements:
+* [Intructions to set up a suitable Python environment](docs/Install.md)
+
+## Get started:
+
+Reconstruct a spectral image from a real dual camera SDCASSI dataset as follows:
+
+``` 
+python main_reconst_from_real_measurements.py
+```
+
+You should get the following visualization:
+
+<img src="figures\result_visualizations_for_real_data_SCN_2_scale_2_June032021_OE.svg" alt="Architecture" width="300"/>
+
+
 ## Citation
 
 The datasets are available for non-commercial research use. If you use our datasets in an academic publication, kindly cite the following paper:
