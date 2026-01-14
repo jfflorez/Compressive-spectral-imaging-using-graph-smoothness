@@ -1,4 +1,4 @@
-from inspect import trace
+import os
 import numpy as np
 import scipy as sp
 from scipy.sparse import coo_matrix
@@ -11,9 +11,11 @@ import reconst_algs.gcsi_algs as gcsi_algs
 
 
 
-dataset_dir = 'C:\\Users\\juanf\\OneDrive\\Documents\\GitHub\\Compressive-spectral-imaging-using-graph-smoothness\\datasets\\'
-#dataset = sp.io.loadmat(dataset_dir + 'simulated_data_HSDC1_DB_Oct092019_5_OE.mat')
-dataset = sp.io.loadmat(dataset_dir + 'real_data_SCN_2_scale_2_June032021_OE')
+datasets_dir = 'datasets'
+dataset_name ='real_data_SCN_2_scale_2_June032021_OE.mat'
+dataset_path = os.path.join(datasets_dir,dataset_name)
+
+dataset = sp.io.loadmat(dataset_path)
 
 hsdc_name = 'scn2'
 print(dataset.keys())
@@ -23,20 +25,11 @@ L  = np.max(dataset['lambda_calib'].shape)
 n1 = dataset['Y'].shape[0]
 n2 = dataset['Y'].shape[1] - L + 1
 
-t = 0.5
-mask = gcsi_utils.generate_sd_cassi_calibration_cube(t,n1,n2,L)
-if 'X' in dataset:
-    x = np.reshape(dataset['X'],(n1*n2*L,1),'F')
-else:
-    x = np.zeros((n1,n2,L)); 
-    x[:,:,L-1] = 1; 
-    x = np.reshape(x,(n1*n2*L,1),'F')
-
 mask = dataset['mask']
 #disp_dir = 'left2right'
 disp_dir = 'right2left'
 sdcassi_model = sd_cassi.SingleDisperserCassiModel(n1,n2,L,mask,disp_dir)
-sdcassi_model.construct_system_mtx()
+sdcassi_model.load_system_mtx()
 sdcassi_model.load_real_snapshot(dataset['Y'])
 
 #sdcassi_model.take_simulated_snapshot(dataset['X'],SNR=np.inf)
@@ -76,6 +69,8 @@ for j in range(len(xx)):
     for i in range(len(yy)):
         x0 = xx[j]
         y0 = yy[i]
+        height = min(y0+height,n1)-y0
+        width = min(x0+width,n2+L-1)-x0
 
         omega_k_tilde, omega_k = sdcassi_model.get_system_submtx_pair(k = (x0,y0,height,width))
         print('x0:',x0,'L_s: ', str(omega_k.L_),'size:',omega_k.to_array().size)
@@ -195,30 +190,41 @@ X_hat = X_hat/C
     #W[W<1e-5] = 0
     
 
-plt.figure()
-plt.imshow(np.reshape(Y[np.unravel_index(omega_k_tilde, (n1,n2+L-1), 'F')],(height,width), order='F'))
-plt.colorbar()
-
-#for key in omega_k: #
-#    if key > 0: 
-#        omega_array = np.hstack((omega_array,omega_k[key]))
-#        x = np.hstack((x,dataset['X'][np.unravel_index(omega_k[key],(n1,n2,L),order='F')]))
-#    else: 
-#        omega_array = omega_k[key]
-#        x = dataset['X'][np.unravel_index(omega_k[key],(n1,n2,L),order='F')]
-
-H = sdcassi_model.Hmtx.tocsr()[omega_k_tilde,:]
-H = H[:,omega_k.to_array()]
-
-plt.figure()
-plt.imshow(np.reshape(H@x[omega_k.to_array()],(height,width), order='F'))
-plt.colorbar()
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), width_ratios=[1, 1, 2], constrained_layout=True)
 
 
-plt.imshow(np.reshape(Y,(n1,n2+L-1),'F'))
+# ---- Figura 1 ----
+im0 = axes[0].imshow(
+    Y[np.unravel_index(omega_k_tilde, (n1, n2+L-1), 'F')]
+    .reshape((height, width), order='F')
+)
+axes[0].set_title("Original : Y[omega_k_tilde]")
+axes[0].set_aspect('equal')
+plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+
+# ---- Figura 2 ----
+H = sdcassi_model.Hmtx.tocsr()[omega_k_tilde, :]
+H = H[:, omega_k.to_array()]
+
+im1 = axes[1].imshow(
+    (H @ X_hat.ravel(order='F')[omega_k.to_array()]).reshape((height, width), order='F')
+)
+axes[1].set_title("Reconst. : Y_hat[omega_k_tilde]")
+axes[1].set_aspect('equal')
+plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+
+# ---- Figura 3 ----
+im2 = axes[2].imshow(
+    np.reshape(Y, (n1, n2+L-1), order='F')
+)
+axes[2].set_title("Original measurement snapshot")
+axes[2].set_aspect('equal')
+plt.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
 
 
 
+if not os.path.isdir('figures'):
+    os.mkdir('figures')
+fig.savefig(f"figures/result_visualizations_for_{dataset_name.replace('.mat','.svg')}")
 
-        
-
+plt.show()

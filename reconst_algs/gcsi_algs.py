@@ -2,7 +2,7 @@ import numpy as np
 
 import scipy as sp
 import scipy.spatial.distance as sp_sd
-from scipy.sparse.linalg import spsolve, minres
+from scipy.sparse.linalg import spsolve, minres, lsqr
 from scipy.sparse import coo_matrix, hstack, vstack, save_npz, load_npz
 
 
@@ -31,12 +31,13 @@ def gsm_noiseless_case_estimation(H, y, W_G, params = {'tol':1e-5, 'maxiter': 10
         A = vstack( [hstack([L_G,H.T]), hstack([H,zeros])] )
         zeros_b = np.zeros((n,1))
         b_0 = vstack([zeros_b, y])
-        x_hat = minres(A.tocsr(), b_0.toarray(), tol=params['tol'], maxiter=params['maxiter'])
-
-        if x_hat[1] == 0:
+        x_hat = minres(A.tocsr(), b_0.toarray(), rtol=params['tol'], maxiter=params['maxiter'])
+        #x_hat = lsqr(A.tocsr(), b_0.toarray(),iter_lim=params['maxiter'])
+        if x_hat[1] == 0: # Uncoment this line to try out lsqr x_hat[2] < params['maxiter']: #
             print('Solution x_hat converged to the desired tolerance within the maximum number of iterations.')
         else: 
-            raise Warning('Either solution reached the maximum number of iterations or there was an illegal input')
+            #raise Warning('Either solution reached the maximum number of iterations or there was an illegal input')
+            print('Warning: Either solution reached the maximum number of iterations or there was an illegal input')
         
         return x_hat[0][0:n]
 
@@ -67,11 +68,12 @@ def gsm_noisy_case_estimation(H, y, W_G, alpha, params = {'tol':1e-4, 'maxiter':
 
         A = (H.T @ H) + alpha * L_G 
         b_0 = H.T @ y
-        x_hat = minres(A.tocsr(), b_0, tol=params['tol'], maxiter=params['maxiter'])
+        x_hat = minres(A.tocsr(), b_0, rtol=params['tol'], maxiter=params['maxiter'])
 
         if x_hat[1] == 0:
             print('Solution x_hat converged to the desired tolerance within the maximum number of iterations.')
         else: 
-            raise Warning('Either solution reached the maximum number of iterations or there was an illegal input')
+            #raise Warning('Either solution reached the maximum number of iterations or there was an illegal input')
+            print(' Warning: Either solution reached the maximum number of iterations or there was an illegal input')
         
         return x_hat[0]
