@@ -1,102 +1,180 @@
-import numpy as np
+import sys
+import os
 
-import scipy
+try:
+    thisFilePath = os.path.abspath(__file__)
+except NameError:
+    print("Error: __file__ is not available. 'thisFilePath' will resolved to os.getcwd().")
+    thisFilePath = os.getcwd()  # Use current directory or specify a default
+
+projectPath = os.path.normpath(os.path.join(thisFilePath,'..','..'))
+
+if not projectPath in sys.path:
+    sys.path.append(projectPath)
+
+import numpy as np
+import scipy as sp
 from scipy.sparse import kron
 from scipy.sparse import diags
 from scipy.sparse import vstack
 import matplotlib.pyplot as plt
 
-from sd_cassi import SingleDisperserCassiModel
-
+from sensing_models.sd_cassi import SingleDisperserCassiModel, construct_system_mtx
+from skimage.transform import rescale
+import utils.gcsi_utils as gcsi_utils
 
 class DualCameraSDCassiModel:
-    """ creates a dual camera single disperser cassi model, where """
-    def __init__(self,n1,n2,L,mask,disp_dir,spectral_sen) -> None:
+    """Creates a dual camera single disperser CASSI model from a suitable dataset in .mat format."""
+    
+    def __init__(self, dataset) -> None:
         """
-            Parameters:
-            sdcassi_model: sd_cassi.SingleDisperserCassiModel object, 
+        Parameters 
+        ----------
+        dataset: str or dict
+            Valid path to a .mat file or dictionary containing a dual camera SD CASSI dataset, with parameters defined as
+            below.
+        Parameters (to be extracted from dataset file)
+        n1 : int
+            Number of entries along spatial dimension 1.
+        n2 : int
+            Number of entries along spatial dimension 2.
+        L : int
+            Number of spectral channels.
+        mask : array_like
+            Coded aperture mask.
+        disp_dir : str or int
+            Dispersion direction.
+        spectral_sen : numpy.ndarray
+            Shape (K, L) array where each row contains spectral sensitivity
+            of side camera's channels. K=1 for panchromatic, K=3 for RGB.
+        """
+        # Validate dataset format and completeness
+        if isinstance(dataset, str) and dataset.endswith('.mat'):
+            path_to_dataset = dataset
+            dataset = sp.io.loadmat(path_to_dataset)            
+            self.dataset_name = os.path.split(path_to_dataset)[1]
 
-            ss: numpy.ndarray, two dimensional array of shape (K,L), where each row contains the spectral sensitivity of 
-            side information camera's channels. 
-            For a panchromatic side camera, K=1, and for an RGB camera, K=3.""" 
-        self.sdcassi_obj = SingleDisperserCassiModel(n1,n2,L,mask,disp_dir)
+        if not isinstance(dataset, dict):
+            raise ValueError(f"Invalid dataset. {dataset} must be a *.mat file or a preloaded dictionary containing the mat file data.")
+
+        expected_keys = ['Y', 'X', 'mask', 'pan_img', 'lambda_calib','spectral_sen']
+        required_keys = ['Y', 'mask', 'pan_img', 'lambda_calib','spectral_sen']
+        missing_keys = [key for key in expected_keys if not key in dataset.keys()]
+
+        n1, m2, L = dataset['mask'].shape
+        n2 = m2 - L + 1
+    
+        # Handle missing spectral sensitivity of side information camera 
+        if 'spectral_sen' in missing_keys and 'spectral_sen' in required_keys:    
+            if dataset['pan_img'].ndim == 2:
+                K = 1
+            elif dataset['pan_img'].ndim == 3:
+                K = dataset['pan_img'].shape[2]
+            else:
+                raise ValueError('dataset["pan_img"] must be a three dimensional array, either a scalar, rgb or multichannel image.')
+            
+            dataset['spectral_sen'] = np.ones(shape=(K,L))
+            missing_keys.remove('spectral_sen')
+
+        # Verify no missing key is required
+        missing_required_keys = [key for key in missing_keys if key in required_keys]
+        if len(missing_required_keys) > 0:
+            raise ValueError(f'The following required keys are missing from dataset : {missing_required_keys}')
+        
+        disp_dir = 'left2right'
+        self.sdcassi_obj = SingleDisperserCassiModel(n1, n2, L, dataset['mask'], disp_dir)
+        
+        # REMOVED: self.sdcassi_obj.load_system_mtx() - now lazy loaded via property
+        
         self.n1 = n1
         self.n2 = n2
         self.L = L
-        self.K = spectral_sen.shape[0]
-        self.spectral_sen = spectral_sen
+        self.spectral_sen = dataset['spectral_sen']
+        self.K = self.spectral_sen.shape[0]
 
-        if not hasattr(self.sdcassi_obj,'Hmtx'):
-            self.sdcassi_obj.construct_system_mtx()
-            #raise NameError("Class attribute Hmtx is not defined, i.e., hasattr(sdcassi_obj,'Hmtx') ->  False.")
-        #else:
-        #self.Hmtx = self.sdcassi_obj.Hmtx
-        
+    def prepare_for_pickle(self):
+        """Call this before pickling to remove large matrices."""
+        if hasattr(self.sdcassi_obj, 'Hmtx'):
+            delattr(self.sdcassi_obj, 'Hmtx')
+        if hasattr(self, '_Rmtx'):
+            delattr(self, '_Rmtx')
 
-        #if not isinstance(sdcassi_obj, sd_cassi.SingleDisperserCassiModel):
-        #    raise NameError("Invalid camera model. sdcassi_obj must be an instance of the class SingleDisperserCassiModel")
-
-        if not spectral_sen.shape[1] == self.L:
-            raise NameError('Inconsistent shape. spectral_sen must be of shape (K, sdcassi_obj.L)')
-    def get_CASSI_mtx(self):
-        if not hasattr(self.sdcassi_obj,'Hmtx'):
-            return None        
+    @property
+    def Hmtx(self):
+        """Lazy-loaded CASSI system matrix. Builds on first access and caches for subsequent calls."""
+        if not hasattr(self.sdcassi_obj, 'Hmtx'):
+            self.sdcassi_obj.load_system_mtx()
         return self.sdcassi_obj.Hmtx
 
-    def construct_side_system_mtx(self):
-        n1n2 = self.n1*self.n2
+    @property
+    def Rmtx(self):
+        """Lazy-loaded side camera system matrix. Builds on first access and caches for subsequent calls."""
+        if not hasattr(self, '_Rmtx'):
+            self._construct_side_system_mtx()
+        return self._Rmtx
+
+    def _construct_side_system_mtx(self):
+        """Internal method to construct side camera system matrix."""
+        n1n2 = self.n1 * self.n2
         for k in range(self.spectral_sen.shape[0]):
             if k > 0:
-                self.Rmtx = vstack(self.Rmtx, kron(self.spectral_sen[k,:],diags(np.ones((n1n2,1)).squeeze(), 0, shape = (n1n2,n1n2))))
-
+                self._Rmtx = vstack(
+                    self._Rmtx, 
+                    kron(self.spectral_sen[k,:], diags(np.ones((n1n2,1)).squeeze(), 0, shape=(n1n2,n1n2)))
+                )
             else:                
-                self.Rmtx = kron(self.spectral_sen[k,:], diags(np.ones((n1n2,1)).squeeze(), 0, shape = (n1n2,n1n2)))
+                self._Rmtx = kron(
+                    self.spectral_sen[k,:], 
+                    diags(np.ones((n1n2,1)).squeeze(), 0, shape=(n1n2,n1n2))
+                )
+
+    def get_dataset_name(self):
+        if not hasattr(self, 'dataset_name'):
+            return None
+        return self.dataset_name
+    
+    def get_CASSI_mtx(self):
+        """Returns the CASSI system matrix, building it if necessary."""
+        return self.Hmtx
+
+    def construct_side_system_mtx(self):
+        """Public method to explicitly construct side camera matrix. Typically not needed due to lazy loading."""
+        if not hasattr(self, '_Rmtx'):
+            self._construct_side_system_mtx()
+            print('Side Camera System matrix Rmtx has been successfully created and added to models attributes.')
     
     def get_side_camera_mtx(self):
-        if not hasattr(self,'Rmtx'):
-            return None
-        return self.Rmtx
+        """Returns the side camera system matrix, building it if necessary."""
+        return self._Rmtx
     
-    def take_simulated_snapshots(self,X,SNR1,SNR2):
-
+    def take_simulated_snapshots(self, X, SNR1: float = np.inf, SNR2: float = np.inf):
         if not check_shape(X, self.n1, self.n2, self.L):
             raise NameError('Invalid shape. X must be a 3 dimensional array of shape (n1,n2,L).')
 
-        if not hasattr(self.sdcassi_obj,'Hmtx'):
-            self.sdcassi_obj.construct_system_mtx()
-            print('CASSI System matrix Hmtx has been successfully created and added to models attributes.')
-
-        if not hasattr(self,'Rmtx'):
-            self.construct_side_system_mtx()
-            print('Side Camera System matrix Rmtx has been successfully created and added to models attributes.')
-
-        n = self.n1*self.n2*self.L
-        m = self.n1*(self.n2 + self.L - 1)        
-        y = self.sdcassi_obj.Hmtx*np.reshape(X,(n,1),'F')
-        z = self.Rmtx*np.reshape(X,(n,1),'F')
+        # Matrices are accessed via properties - they build automatically if needed
+        n = self.n1 * self.n2 * self.L
+        m = self.n1 * (self.n2 + self.L - 1)        
+        
+        y = self.Hmtx * np.reshape(X, (n,1), 'F')
+        z = self.Rmtx * np.reshape(X, (n,1), 'F')
         
         if SNR1 != np.inf:
-            sigma = np.sqrt(np.std(y,axis=0)**2/(10**(SNR1/10)))
-            y = y + sigma*np.random.randn(m,1)
+            sigma = np.sqrt(np.std(y, axis=0)**2 / (10**(SNR1/10)))
+            y = y + sigma * np.random.randn(m, 1)
 
-        self.Y = np.reshape(y,(self.n1,self.n2 + self.L - 1),'F')
+        self.Y = np.reshape(y, (self.n1, self.n2 + self.L - 1), 'F')
         print('Real coded snapshot Y has been successfully loaded and added to models attributes.')
 
         if SNR2 != np.inf:
-            sigma = np.sqrt(np.std(z,axis=0)**2/(10**(SNR2/10)))
-            z = z + sigma*np.random.randn(m,1)
+            sigma = np.sqrt(np.std(z, axis=0)**2 / (10**(SNR2/10)))
+            z = z + sigma * np.random.randn(self.n1 * self.n2 * self.K, 1)
 
-        self.Y = np.reshape(y,(self.n1,self.n2 + self.L - 1),'F')
-        self.Z = np.reshape(z,(self.n1,self.n2,self.K),'F')
+        self.Z = np.reshape(z, (self.n1, self.n2, self.K), 'F')
         print('Side information snapshot Z has been successfully loaded and added to models attributes.')
 
     def load_real_snapshots(self, Y, Z):
         if not check_shape(Y, self.n1, self.n2 + self.L - 1, 1):
             raise NameError('Invalid shape. Y must be a 2 dimensional array of shape (n1,n2+L-1).')
-        if (not hasattr(self,'Hmtx')) or (not hasattr(self,'Rmty')):
-            self.construct_system_mtx()
-            print("System matrices Hmtx and Rmtx have been successfully created and added to model's attributes.")
-
         if not check_shape(Z, self.n1, self.n2, self.K):
             raise NameError('Invalid shape. Z must be a either of shape (n1,n2) or (n1,n2,K).')
         
@@ -111,16 +189,70 @@ def check_shape(A: np.ndarray, height: int, width: int, depth:int) -> bool:
             return (A.shape[0] == height) and (A.shape[1] == width)
         else:
             return False
+        
+def generate_DualCameraSDCassiData(X, lambda_calib, rescaling_factor = 1, t = 0.5, disp_dir = 'left2right'):
+
+    """
+    Docstring for generate_DualCameraSDCassiData
+    
+    Parameters:
+    -----------
+    X (np.array) : 
+        Spectral image of size n1 by n2 by L
+    rescaling_factor (float) : 
+        Value in (0,1] for downsampling to rescaling_factor*n1 by rescaling_factor*n2 resolution 
+    t (float) : 
+        Value in (0,1) indicating the transmittance of the coded aperture
+    disp_dir (str): 
+        Value of either "left2right" or "right2left" indicating the direction in which the coded apereture shadow moves with wavelength
+    """
+
+
+    dataset = {}
+    if rescaling_factor < 1:
+        dataset['X'] = rescale(X, (rescaling_factor,rescaling_factor,1), anti_aliasing=True)
+    else:
+        dataset['X'] = X
+    n1, n2, L = dataset['X'].shape
+
+    if lambda_calib.size != L:
+        raise ValueError(f'Length mismatch. Parameter "lambda_calib" must be a one dimensional array of {L} elements.')
+    dataset['lambda_calib'] = lambda_calib
+    # Extend this to multi channel side information
+    dataset['pan_img'] = np.mean(dataset['X'],axis=2)
+    dataset['spectral_sen'] = np.ones((1,L))/L
+
+    dataset['mask'] = gcsi_utils.generate_sd_cassi_calibration_cube(t,n1,n2,L) 
+
+    # Generate CASSI snapshot
+    Hmtx = construct_system_mtx(dataset['mask'],n1,n2,L,disp_dir)
+    y = Hmtx @ dataset['X'].ravel(order='F') # no need to reshape apparently numpy handles well the multiplication
+    dataset['Y'] = np.reshape(y,shape=(n1,n2+L-1))
+
+    return dataset
+
 
 if __name__ == '__main__':
-    dataset_dir = 'Datasets/'
-    dataset = scipy.io.loadmat(dataset_dir + 'simulated_data_HSDC1_DB_Oct092019_5_OE.mat')
-    #dataset = scipy.io.loadmat(dataset_dir + 'real_data_SCN_2_scale_2_June032021_OE')
+    
+
+    dataset_dir = 'datasets'
+    dataset_filepath = os.path.join(dataset_dir,'simulated_data_HSDC1_DB_Oct092019_5_OE.mat')
+    
+    # Load existing dual camera sd cassi dataset
+    dataset = sp.io.loadmat(dataset_filepath)
     print(dataset.keys())
+    # Uncommont lines below if you would like to regenerate the dataset with lower image resolution
+    # 
+    #dataset = generate_DualCameraSDCassiData(dataset['X'],
+    #                                         dataset['lambda_calib'],
+    #                                         rescaling_factor=0.5,
+    #                                         t = 0.5,
+    #                                         disp_dir = 'left2right')
 
-
-    L  = np.max(dataset['lambda_calib'].shape)
+    # Compute dimensions of the underlying spectral image based on CASSI snapshot (measurement)
+    L  = np.max(dataset['lambda_calib'].shape) # should be same as
     n1 = dataset['Y'].shape[0]
+    # The number of columns of the spectral image is given by
     n2 = dataset['Y'].shape[1] - L + 1
 
     if 'X' in dataset:
@@ -130,19 +262,28 @@ if __name__ == '__main__':
         x[:,:,L-1] = 1; 
         x = np.reshape(x,(n1*n2*L,1),'F')
 
-    mask = dataset['mask']
-    disp_dir = 'left2right'
+    # TODO: Estimate disp_dir from dataset['mask']. 
+    #mask = dataset['mask']    
+    #for l in range(0,L,3):
+    #    print(l)
+    #    plt.figure(l)
+    #    plt.imshow(mask[:,:,l])
+    #    plt.title(f'System response at {l}')
+    #plt.show()
+    # Naive solution: Assume a direction. Construct system matrix and get the response for a 
+    # delta spectral images, all ones at wavelenth l and zeroes elsewhere. Then, compare
+    # the response with mask at wavelength. They should be the same. Otherwise, the direction is the opposite 
+    
     #disp_dir = 'right2left'
     #sdcassi_model = sd_cassi.SingleDisperserCassiModel(n1,n2,L,mask,disp_dir)
     #sdcassi_model.construct_system_mtx()
 
-    dc_sdcassi_model = DualCameraSDCassiModel(n1,n2,L,mask,disp_dir,np.ones((1,L)))
-
-
-    dc_sdcassi_model.take_simulated_snapshots(dataset['X'],SNR1=20, SNR2=np.inf)
-    #Y = sdcassi_model.Y
-    #Hmtx = sdcassi_cam.construct_cassi_mtx()
-
+    dc_sdcassi_model = DualCameraSDCassiModel(dataset) 
+    # TODO: If dataset contains snapshots, load them directly. Modify DualCameraModel class.
+    dc_sdcassi_model.load_real_snapshots(dataset['Y'],dataset['pan_img'])
+    # Uncomment line below to generate new snapshots based on loaded DUAL CAM SD CASSI system.
+    #dc_sdcassi_model.take_simulated_snapshots(dataset['X'],SNR1=20, SNR2=np.inf)
+    
     plt.imshow(dc_sdcassi_model.Y)
     plt.figure(), plt.imshow(dc_sdcassi_model.Z)
     plt.show()
