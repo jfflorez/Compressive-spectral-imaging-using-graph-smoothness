@@ -2,16 +2,18 @@
 
 This repository contains both real and simulated datasets to test the methods and reproduce the results of our paper:
 
-1. **Block-based spectral image reconstruction using smoothness on graphs.**
+**Block-based spectral image reconstruction using smoothness on graphs.**
 
 Python implementations of reconstruction methods and usage examples are still being refined so please check constantly for updates.
+
+**Note (Update: 21 Jan 2026):**  The results presented below are for illustrative purposes only and should not be over-interpreted. The codebase is currently under active debugging and ongoing improvement.
 
 ## Project requirements:
 * [Intructions to set up a suitable Python environment](docs/Install.md)
 
 ## Get started:
 
-Reconstruct a spectral image from a real dual camera SDCASSI dataset as follows:
+Reconstruct a spectral image from a real/or simulated dual camera SDCASSI dataset as follows:
 
 ``` 
 python main_reconst_from_real_measurements.py
@@ -20,6 +22,16 @@ python main_reconst_from_real_measurements.py
 You should get the following visualization:
 
 <img src="figures\result_visualizations_for_real_data_SCN_2_scale_2_June032021_OE.svg" alt="Architecture" width="300"/>
+
+``` 
+python main_reconst_from_simulated_measurements.py
+```
+
+You should get the following visualization:
+
+<img src="figures\error_images_avgPSNR_27.54dB_for_simulated_data_HSDC1_DB_Oct092019_5_OE.svg" alt="Architecture" width="300"/>
+
+
 
 
 ## Citation
