@@ -8,14 +8,15 @@ import matplotlib.pyplot as plt
 import sensing_models.sd_cassi as sd_cassi
 import utils.gcsi_utils as gcsi_utils
 import reconst_algs.gcsi_algs as gcsi_algs
-
+from utils.datasets import load_dataset
 
 
 datasets_dir = 'datasets'
 dataset_name ='real_data_SCN_2_scale_2_June032021_OE.mat'
 dataset_path = os.path.join(datasets_dir,dataset_name)
 
-dataset = sp.io.loadmat(dataset_path)
+# Load and validate dataset
+dataset = load_dataset(dataset_path)
 
 hsdc_name = 'scn2'
 print(dataset.keys())
@@ -26,8 +27,8 @@ n1 = dataset['Y'].shape[0]
 n2 = dataset['Y'].shape[1] - L + 1
 
 mask = dataset['mask']
-#disp_dir = 'left2right'
-disp_dir = 'right2left'
+disp_dir = dataset['disp_dir']
+
 sdcassi_model = sd_cassi.SingleDisperserCassiModel(n1,n2,L,mask,disp_dir)
 sdcassi_model.load_system_mtx()
 sdcassi_model.load_real_snapshot(dataset['Y'])
@@ -44,26 +45,10 @@ width = 32
 #yy=np.linspace(0,n1 - 1 - (height-1), int(n1/height), dtype=int)
 xx = np.arange(0,n2+L-1, width, dtype= int)
 yy = np.arange(0,n1, height, dtype= int)
-#xx = [86]
-#yy = [90]
+
 
 X_hat = np.zeros((n1,n2,L))
 C = np.zeros((n1,n2,L))
-
-"""for j in range(len(xx)):
-    for i in range(len(yy)):
-        x0 = xx[j]
-        y0 = yy[i]
-
-        omega_k_tilde, omega_k = sdcassi_model.get_system_submtx_pair(k = (x0,y0,height,width))
-        print('x0:',x0,'L_s: ', str(omega_k.L_),'size:',omega_k.to_array().size)
-
-        multi_idx = np.unravel_index(omega_k.to_array(),(n1,n2,L), order = 'F')
-        X_hat[multi_idx] += dataset['X'][multi_idx]
-        C[multi_idx] += 1
-
-X_hat = X_hat/C"""
-
 
 for j in range(len(xx)):
     for i in range(len(yy)):
@@ -105,42 +90,6 @@ for j in range(len(xx)):
 
         multi_idx_max_degree = np.unravel_index(omega_k.to_array()[idx_max_degree],(n1,n2,L), order = 'F')
 
-        """        node_idx = {}
-                for ii in range(len(omega_k.to_array())):
-                    node_idx[omega_k.to_array()[ii]] = ii
-
-                x_min = multi_idx[1].min()
-                x_max = multi_idx[1].max()
-
-                v_0 = multi_idx_max_degree
-                v_nxt = multi_idx_max_degree
-                cntr = 0
-                while v_nxt[1] < x_max-1 and v_nxt[2] < multi_idx[2].max()-1:       
-                    v_nxt = (v_0[0],v_0[1]+1,v_0[2]+1)
-
-                    if cntr > 0 :
-                        e_tmp = np.zeros((2,1))
-                        e_tmp[0] = node_idx[np.ravel_multi_index(v_0,(n1,n2,L),order='F')]
-                        e_tmp[1] = node_idx[np.ravel_multi_index(v_nxt,(n1,n2,L),order='F')]
-                        e = np.hstack((e,e_tmp))                
-                    else:
-                        e = np.zeros((2,1))
-                        e[0] = node_idx[np.ravel_multi_index(v_0,(n1,n2,L),order='F')]
-                        e[1] = node_idx[np.ravel_multi_index(v_nxt,(n1,n2,L),order='F')]
-                    cntr += 1
-                    v_0 = v_nxt """
-
-        
-
-
-        #W_G[W_G.nonzero()] = np.multiply(W_G[W_G.nonzero()], (W_G[W_G.nonzero()]>1e-4).astype(np.float64))
-
-        #L_G = sp.sparse.spdiags(np.sum(W_G, axis=1).squeeze(), 0 , n , n ) - W_G
-        #L_G = L_G/np.sum(np.sum(W_G, axis=1).squeeze())
-        
-        #plt.figure()
-        #plt.plot(L_G@z_k)
-
         Hmtx = sdcassi_model.Hmtx.tocsr()[omega_k_tilde,:]
         Hmtx = Hmtx[:,omega_k.to_array()]
         y = Y[np.unravel_index(omega_k_tilde,(n1,n2+L-1), order = 'F')].reshape((m,1),order = 'F')  
@@ -158,7 +107,7 @@ for j in range(len(xx)):
         
         #W_ = coo_matrix((np.ones(e[0].shape),(e[0],e[1])), shape = (n,n))
         #W_ = W_.maximum(W_)
-        x_hat = gcsi_algs.gsm_noisy_case_estimation(Hmtx.tocsr(), y, (W_G).tocsr(), alpha = 1.93, params = {'tol':1e-5, 'maxiter': 10000})        
+        x_hat, metadata = gcsi_algs.gsm_noisy_case_estimation(Hmtx.tocsr(), y, (W_G).tocsr(), params = {'alpha' : 1.93, 'tol':1e-5, 'maxiter': 10000})        
 
         #multi_idx = np.unravel_index(omega_k.to_array(),(n1,n2,L), order = 'F')
 
