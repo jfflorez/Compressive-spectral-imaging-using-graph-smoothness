@@ -73,7 +73,7 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
 
     return x_hat, metadata
 
-def gsm_noisy_case_estimation(H, y, W_G, alpha, params = {'tol':1e-4, 'maxiter': 10000}):
+def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'maxiter': 10000}):
         """ computes the solution to the problem:  
                     min_x alpha * (x^T (L_G x)) + || H x - y ||_2^2, 
             using the algorithm MINRES, where L_G = diag(sum(W_G,1)) - W_G.
@@ -98,14 +98,31 @@ def gsm_noisy_case_estimation(H, y, W_G, alpha, params = {'tol':1e-4, 'maxiter':
         D_inv_sq = sp.sparse.spdiags(1/np.sqrt(np.sum(W_G, axis=1).squeeze()), 0 , n , n )
         L_G = sp.sparse.spdiags(np.ones((n,1)).squeeze(), 0 , n , n ) - D_inv_sq @ (W_G @ D_inv_sq)
 
-        A = (H.T @ H) + alpha * L_G 
+        A = (H.T @ H) + params['alpha']* L_G 
         b_0 = H.T @ y
-        x_hat = minres(A.tocsr(), b_0, rtol=params['tol'], maxiter=params['maxiter'])
+        x_hat, info = minres(A.tocsr(), b_0, rtol=params['tol'], maxiter=params['maxiter'])
 
-        if x_hat[1] == 0:
-            print('Solution x_hat converged to the desired tolerance within the maximum number of iterations.')
-        else: 
-            #raise Warning('Either solution reached the maximum number of iterations or there was an illegal input')
-            print(' Warning: Either solution reached the maximum number of iterations or there was an illegal input')
+        # Decode MINRES info flag
+        convergence_status = {
+            0: 'converged',
+            1: 'max_iter_reached',
+            -1: 'illegal_input_or_breakdown'
+        }
         
-        return x_hat[0]
+        converged = (info == 0)
+        status = convergence_status.get(info, 'unknown')
+        
+        if not converged:
+            print(f'Warning: MINRES {status} (info={info})')
+        else:
+            print('Solution converged to desired tolerance.')
+        
+        metadata = {
+            'converged': converged,
+            'minres_info': int(info),
+            'status': status,
+            'tol': params['tol'],
+            'maxiter': params['maxiter']
+        }
+
+        return x_hat, metadata
