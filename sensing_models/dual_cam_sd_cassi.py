@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from sensing_models.sd_cassi import SingleDisperserCassiModel, construct_system_mtx
 from skimage.transform import rescale
 import utils.gcsi_utils as gcsi_utils
+from utils.datasets import load_dataset
 
 class DualCameraSDCassiModel:
     """Creates a dual camera single disperser CASSI model from a suitable dataset in .mat format."""
@@ -31,65 +32,28 @@ class DualCameraSDCassiModel:
         Parameters 
         ----------
         dataset: str or dict
-            Valid path to a .mat file or dictionary containing a dual camera SD CASSI dataset, with parameters defined as
-            below.
-        Parameters (to be extracted from dataset file)
-        n1 : int
-            Number of entries along spatial dimension 1.
-        n2 : int
-            Number of entries along spatial dimension 2.
-        L : int
-            Number of spectral channels.
-        mask : array_like
-            Coded aperture mask.
-        disp_dir : str or int
-            Dispersion direction.
-        spectral_sen : numpy.ndarray
-            Shape (K, L) array where each row contains spectral sensitivity
-            of side camera's channels. K=1 for panchromatic, K=3 for RGB.
+            Valid path to a .mat file or pre-loaded dictionary containing a dual camera SD CASSI dataset.
         """
-        # Validate dataset format and completeness
-        if isinstance(dataset, str) and dataset.endswith('.mat'):
-            path_to_dataset = dataset
-            dataset = sp.io.loadmat(path_to_dataset)            
-            self.dataset_name = os.path.split(path_to_dataset)[1]
+        # Load and validate dataset
+        validated_dataset = load_dataset(dataset)
+        self.dataset_name = os.path.basename(dataset) if isinstance(dataset, str) else None
 
-        if not isinstance(dataset, dict):
-            raise ValueError(f"Invalid dataset. {dataset} must be a *.mat file or a preloaded dictionary containing the mat file data.")
-
-        expected_keys = ['Y', 'X', 'mask', 'pan_img', 'lambda_calib','spectral_sen']
-        required_keys = ['Y', 'mask', 'pan_img', 'lambda_calib','spectral_sen']
-        missing_keys = [key for key in expected_keys if not key in dataset.keys()]
-
-        n1, m2, L = dataset['mask'].shape
+        # Extract dimensions
+        n1, m2, L = validated_dataset['mask'].shape
         n2 = m2 - L + 1
-    
-        # Handle missing spectral sensitivity of side information camera 
-        if 'spectral_sen' in missing_keys and 'spectral_sen' in required_keys:    
-            if dataset['pan_img'].ndim == 2:
-                K = 1
-            elif dataset['pan_img'].ndim == 3:
-                K = dataset['pan_img'].shape[2]
-            else:
-                raise ValueError('dataset["pan_img"] must be a three dimensional array, either a scalar, rgb or multichannel image.')
-            
-            dataset['spectral_sen'] = np.ones(shape=(K,L))
-            missing_keys.remove('spectral_sen')
 
-        # Verify no missing key is required
-        missing_required_keys = [key for key in missing_keys if key in required_keys]
-        if len(missing_required_keys) > 0:
-            raise ValueError(f'The following required keys are missing from dataset : {missing_required_keys}')
-        
-        disp_dir = 'left2right'
-        self.sdcassi_obj = SingleDisperserCassiModel(n1, n2, L, dataset['mask'], disp_dir)
-        
-        # REMOVED: self.sdcassi_obj.load_system_mtx() - now lazy loaded via property
-        
+        # Initialize CASSI model
+        self.sdcassi_obj = SingleDisperserCassiModel(
+            n1, n2, L, 
+            validated_dataset['mask'], 
+            validated_dataset['disp_dir']
+        )
+
+        # Store attributes
         self.n1 = n1
         self.n2 = n2
         self.L = L
-        self.spectral_sen = dataset['spectral_sen']
+        self.spectral_sen = validated_dataset['spectral_sen'] if 'spectral_sen' in validated_dataset.keys() else np.ones((1,L))
         self.K = self.spectral_sen.shape[0]
 
     def prepare_for_pickle(self):
@@ -112,6 +76,9 @@ class DualCameraSDCassiModel:
         if not hasattr(self, '_Rmtx'):
             self._construct_side_system_mtx()
         return self._Rmtx
+    @property
+    def Y(self):
+        return self.sdcassi_obj.Y
 
     def _construct_side_system_mtx(self):
         """Internal method to construct side camera system matrix."""
@@ -178,9 +145,12 @@ class DualCameraSDCassiModel:
         if not check_shape(Z, self.n1, self.n2, self.K):
             raise NameError('Invalid shape. Z must be a either of shape (n1,n2) or (n1,n2,K).')
         
-        self.Y = Y
+        self.sdcassi_obj.load_real_snapshot(Y)
         self.Z = Z
         print("Real coded snapshot Y has been successfully loaded and added to model's attributes.")
+
+    def get_linear_system(self, block: tuple[int, int, int, int] = None):
+        return self.sdcassi_obj.get_linear_system(block)
 
 def check_shape(A: np.ndarray, height: int, width: int, depth:int) -> bool:
         if A.ndim == 3:
@@ -239,7 +209,7 @@ if __name__ == '__main__':
     dataset_filepath = os.path.join(dataset_dir,'simulated_data_HSDC1_DB_Oct092019_5_OE.mat')
     
     # Load existing dual camera sd cassi dataset
-    dataset = sp.io.loadmat(dataset_filepath)
+    dataset = load_dataset(dataset_filepath)
     print(dataset.keys())
     # Uncommont lines below if you would like to regenerate the dataset with lower image resolution
     # 

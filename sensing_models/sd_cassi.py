@@ -102,7 +102,7 @@ class SingleDisperserCassiModel:
         self.Y = np.reshape(y,(self.n1,self.n2 + self.L - 1),'F')
         print('Real coded snapshot Y has been successfully loaded and added to models attributes.')
 
-    def load_real_snapshot(self, Y):
+    def load_real_snapshot(self, Y : np.ndarray):
         if not (Y.shape[0] == self.n1 and Y.shape[1] == self.n2 + self.L - 1):
             raise NameError('Invalid shape. Y must be a 2 dimensional array of shape (n1,n2+L-1).')
         if not hasattr(self,'Hmtx'):
@@ -189,6 +189,31 @@ class SingleDisperserCassiModel:
 
             x0_min = x0_max = y0_min = y0_max = 0
         return omega_k_tilde, SignalSubDomain(omega_k,self.n1,self.n2,self.L)
+    
+    def get_linear_system(self, block: tuple[int, int, int, int] = None):
+        """ 
+            Return the CASSI system of linear equations (coefficient matrix and response vector).
+            
+            For block extraction, also returns the multi-dimensional indices of the subsampled domain.
+        """
+        if block is None:
+            return self.Hmtx, self.Y.ravel(order='F'), None
+        
+        x0, y0, height, width = block # Validates 4-element tuple
+        omega_tilde_k, omega_k = self.get_system_submtx_pair(block)
+        # Multi index of the signal values at omega_k
+        multi_idx = np.unravel_index(omega_k.to_array(), self.spectral_shape, order='F')
+
+        # Extract CASSI system submatrix
+        Hmtx = self.Hmtx.tocsr()[:, omega_k.to_array()]
+        Hmtx = Hmtx[omega_tilde_k, :]
+        
+        # Extract measurement patch
+        m = omega_tilde_k.size
+        y = self.Y.ravel('F')[omega_tilde_k].reshape((m, 1))
+
+
+        return Hmtx, y, multi_idx
 
 
 
