@@ -9,12 +9,13 @@ def reshape_as_column(x):
         return np.reshape(x, (x.size,1), 'F')
 
 class SignalSubDomain:
-    def __init__(self,omega_k,n1,n2,L) -> None:
-        """ parses a set of coordinates omega_k from a n1-by-n2-ny-L mesh as a dictionary,
-        where key provide access to coordinates with the same wavelength coordinate.         
+    def __init__(self, omega_k, n1, n2, L) -> None:
+        """ 
+        Parses a set of coordinates omega_k from a n1-by-n2-by-L mesh as a dictionary,
+        where keys provide access to coordinates with the same wavelength coordinate.         
         """
         if len(omega_k.keys()) > L:
-            raise ValueError(f'Parameter L : {L} cannot be less than len(omega_k.keys())')
+            raise ValueError(f'Parameter L: {L} cannot be less than len(omega_k.keys()): {len(omega_k.keys())}')
         self.vertices = omega_k
         self.L = L
         self.L_ = len(omega_k.keys())
@@ -24,43 +25,44 @@ class SignalSubDomain:
     def get_wavelength_coords(self):
         return self.vertices.keys()
 
-    def get_vertex_coords(self,l):
-        # returns vertex coordinate on a n1-by-n2-by-L meshgrid.
-        vertex_indices = self.to_array()
-        return np.unravel_index(vertex_indices, shape=(self.n1,self.n2,self.L),order='F')
-    
-    # TODO: Evaluate if this is useful
-    def contruct_vertex_features(self,Z,l):
-
-        """Samples Z at vertex coordinates to generate node/vertex features"""
-
-        if not self.n1 == Z.shape[0] and not self.n2 == Z.shape[1]:
-            raise ValueError(f'Invalid shape : {Z.shape}. Z must be of shape ({self.n1},{self.n2},x)')
+    def get_vertex_coords(self, l):
+        """Returns vertex coordinates for wavelength l on a n1-by-n2-by-L meshgrid."""
+        if l not in self.vertices:
+            raise ValueError(f'Wavelength {l} not in vertices')
         vertex_indices = self.vertices[l]
-        coords = np.unravel_index(vertex_indices,shape=(self.n1,self.n2,self.L),order='F')
-        nx = coords[1].max()-coords[1].min()+1
-        ny = coords[0].max()-coords[0].min()+1
+        return np.unravel_index(vertex_indices, shape=(self.n1, self.n2, self.L), order='F')
+    # TODO: extend to include both radiometric and spatial coords features for joint feature vectors
+    def extract_vertex_features(self, Z, l):
+        """Samples Z at vertex coordinates to generate node/vertex features"""
+        if Z.shape[0] != self.n1 or Z.shape[1] != self.n2:
+            raise ValueError(f'Invalid shape: {Z.shape}. Z must be of shape ({self.n1}, {self.n2}, x)')
+        
+        if l not in self.vertices:
+            raise ValueError(f'Wavelength {l} not in vertices')
+            
+        vertex_indices = self.vertices[l]
+        coords = np.unravel_index(vertex_indices, shape=(self.n1, self.n2, self.L), order='F')
+        nx = coords[1].max() - coords[1].min() + 1
+        ny = coords[0].max() - coords[0].min() + 1
 
-        return np.reshape(Z[coords[0],coords[1]], shape = (nx*ny,1),order='F')
+        return np.reshape(Z[coords[0], coords[1]], shape=(nx * ny, 1), order='F')
 
-         
     def to_array(self):
-        """ convert vertex indices from dict to linear array representation
-            We assume
-            self.vertices is a dictionary storing key, pairs,
-            where key index the wavelength dimension of an spectral image and
-            self.vertices[key] are linear indices at that wavelength giving access to
-            patch or sample of values.
+        """ 
+        Convert vertex indices from dict to linear array representation.
+        Concatenates indices in sorted wavelength order.
         """
-        fst_key = list(self.vertices.keys())[0]
-        for key in self.vertices: #
-            if key > fst_key: 
-                out = np.hstack((out,self.vertices[key]))
-                #x = np.hstack((x,dataset['X'][np.unravel_index(omega_k[key],(n1,n2,L),order='F')]))
-            else: 
-                out = self.vertices[key]
-                #x = dataset['X'][np.unravel_index(omega_k[key],(n1,n2,L),order='F')]
-        return out
+        if not self.vertices:
+            return np.array([])
+        
+        sorted_keys = sorted(self.vertices.keys())
+        return np.hstack([self.vertices[key] for key in sorted_keys])
+    
+    def unravel_index(self, order='F'):
+        """Multi-index of the signal values at omega_k"""
+        spectral_shape = (self.n1, self.n2, self.L)
+        multi_idx = np.unravel_index(self.to_array(), spectral_shape, order=order)
+        return multi_idx
 
 class SingleDisperserCassiModel:
     def __init__(self,n1,n2,L,mask,disp_dir) -> None:
@@ -195,25 +197,27 @@ class SingleDisperserCassiModel:
             Return the CASSI system of linear equations (coefficient matrix and response vector).
             
             For block extraction, also returns the multi-dimensional indices of the subsampled domain.
+
+            Returns:
+            --------
+            system of linear equations (tuple) : H, y, omega_k or None
         """
         if block is None:
             return self.Hmtx, self.Y.ravel(order='F'), None
         
         x0, y0, height, width = block # Validates 4-element tuple
         omega_tilde_k, omega_k = self.get_system_submtx_pair(block)
-        # Multi index of the signal values at omega_k
-        multi_idx = np.unravel_index(omega_k.to_array(), self.spectral_shape, order='F')
 
         # Extract CASSI system submatrix
-        Hmtx = self.Hmtx.tocsr()[:, omega_k.to_array()]
-        Hmtx = Hmtx[omega_tilde_k, :]
+        H_k = self.Hmtx.tocsr()[:, omega_k.to_array()]
+        H_k = H_k[omega_tilde_k, :]
         
         # Extract measurement patch
         m = omega_tilde_k.size
-        y = self.Y.ravel('F')[omega_tilde_k].reshape((m, 1))
+        y_k = self.Y.ravel('F')[omega_tilde_k].reshape((m, 1))
 
 
-        return Hmtx, y, multi_idx
+        return H_k, y_k, omega_k
 
 
 
