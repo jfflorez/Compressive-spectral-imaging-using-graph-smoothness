@@ -160,23 +160,22 @@ def gsp_learn_graph_log_degrees(Z, a, b, params={'nargout': 1}):
 
     if not 'fix_zeros' in params: params['fix_zeros'] = isspmatrix(Z) 
 
-    if not 'max_w' in params:     params['max_w'] = np.Inf 
+    if not 'max_w' in params:     params['max_w'] = np.inf 
     if not 'nargout' in params: params['nargout'] = 1
     
     #print(params.values())
 
     ## Fix parameter size and initialize
-    if utils.isvector(Z):
-        z = Z;  # lazy copying of matlab doesn't allocate new memory for z
-    else:
-        z = utils.squareform_sp(Z)
+
+    z = Z if utils.isvector(Z) else utils.squareform_sp(Z)
     # clear Z   # for large scale computation
 
     # Check if Z is a compressed form of a n by n distance matrix
-    card_E_0 = np.max(np.shape(z))# initial number of edges
-    n = np.round((1 + np.sqrt(1+8*card_E_0.astype(np.float32) ))/ 2); # number of nodes
+    card_E_0 = np.max(z.shape) # initial number of edges
+    n = int(np.round((1 + np.sqrt(1 + 8*card_E_0)) / 2)) # number of nodes
+
     # n(n-1)/2 = l => n = (1 + sqrt(1+8*l))/ 2
-    if not (card_E_0 - n*(n-1)/2 == 0):
+    if card_E_0 != n*(n-1)//2: ## // floor integer division
         raise ValueError('The length of Z must be the same as the number of upper diagonal elements of an n x n matrix')
 
     z = utils.reshape_as_column(z)
