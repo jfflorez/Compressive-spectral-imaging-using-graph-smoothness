@@ -84,6 +84,13 @@ class SingleDisperserCassiModel:
     def load_system_mtx(self):
         self.Hmtx = construct_system_mtx(self.mask,self.n1,self.n2,self.L,self.disp_dir)
 
+    @property
+    def Hmtx(self):
+        """Lazy-loaded side camera system matrix. Builds on first access and caches for subsequent calls."""
+        if not hasattr(self, '_Hmtx'):
+            self._Hmtx = construct_system_mtx(self.mask,self.n1,self.n2,self.L,self.disp_dir)
+        return self._Hmtx
+
     def take_simulated_snapshot(self,X,SNR):
 
         if not (X.shape[0] == self.n1 and X.shape[1] == self.n2 and X.shape[2] == self.L):

@@ -56,10 +56,13 @@ class DualCameraSDCassiModel:
         self.spectral_sen = validated_dataset['spectral_sen'] if 'spectral_sen' in validated_dataset.keys() else np.ones((1,L))
         self.K = self.spectral_sen.shape[0]
 
+        # Load snapshots
+        self.load_real_snapshots(validated_dataset['Y'],validated_dataset['pan_img'])
+
     def prepare_for_pickle(self):
         """Call this before pickling to remove large matrices."""
-        if hasattr(self.sdcassi_obj, 'Hmtx'):
-            delattr(self.sdcassi_obj, 'Hmtx')
+        if hasattr(self.sdcassi_obj, '_Hmtx'):
+            delattr(self.sdcassi_obj, '_Hmtx')
         if hasattr(self, '_Rmtx'):
             delattr(self, '_Rmtx')
 
@@ -67,7 +70,9 @@ class DualCameraSDCassiModel:
     def Hmtx(self):
         """Lazy-loaded CASSI system matrix. Builds on first access and caches for subsequent calls."""
         if not hasattr(self.sdcassi_obj, 'Hmtx'):
-            self.sdcassi_obj.load_system_mtx()
+            #print('Loading Hmtx')
+            #self.sdcassi_obj.load_system_mtx()
+            self.sdcassi_obj.Hmtx
         return self.sdcassi_obj.Hmtx
 
     @property
