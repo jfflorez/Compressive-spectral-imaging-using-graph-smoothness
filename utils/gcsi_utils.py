@@ -25,15 +25,30 @@ def preprocess_side_image_for_graph_learning(Z,Omega_x0y0,n1,n2,L,k_):
         edge_const_set:
     """
     l0 = list(Omega_x0y0.vertices.keys())[0]
-    for l in Omega_x0y0.vertices:
-        # vertices associated with l-th band
-        coords = np.unravel_index(Omega_x0y0.vertices[l],(n1,n2,L),order='F')
+    #for l in Omega_x0y0.vertices:
+    wavelength_coord = Omega_x0y0.get_wavelength_coords()
+    for l in wavelength_coord: # loop over wavelength index 
+
+        # Vertices associated with l-th band
+        vertex_indices = Omega_x0y0.vertices[l]
+        coords = np.unravel_index(vertex_indices,(n1,n2,L),order='F')
+        
+        print(f'{l}, xmin: {coords[1].min()}, xmax: {coords[1].max()}')
+        #print(f'ymin: {coords[0].min()}, ymax: {coords[0].max()}')
+        height = coords[0].max()-coords[0].min()
+        width = coords[1].max()-coords[1].min()
+        hs = np.sqrt(height**2+width**2)/2
         N_l = coords[0].size
         z_l = np.reshape(Z[coords[0],coords[1]],(N_l,1), order = 'F')
 
+        hr = z_l.mean()
 #        if knn_edge_cons:
-        edge_set_l = knn_graph(torch.Tensor(z_l), k_, loop=False)
+        joint_features = np.concatenate((z_l/hr,np.reshape(coords[0],(N_l,1), order = 'F')/hs,np.reshape(coords[1],(N_l,1), order = 'F')/hs),axis=1)
+        edge_set_l = knn_graph(torch.Tensor(joint_features), k_, loop=False)
         #edge_index_l = edge_index_l.numpy()
+
+        #r_inv = np.argsort(z_l,axis=0)
+        #z_l[r_inv.flatten()] = np.reshape(np.arange(0,N_l),(N_l,1))
         if l > l0:
             # Locate indices in the l-th diagonal block by adding z_x0y0.shape[0]
             edge_set_l = edge_set_l + z_x0y0.shape[0]
@@ -66,7 +81,6 @@ def generate_sd_cassi_calibration_cube(t,n1,n2,L):
 
     return mask
 
-
 def construct_graph_on_omega_x0y0(z_x0y0,edge_set_x0y0, q):
     """"""
 
@@ -86,7 +100,7 @@ def construct_graph_on_omega_x0y0(z_x0y0,edge_set_x0y0, q):
     #Z = sp_sd.squareform(z) # turns the condensed form into a n by n distance matrix
 
 
-    params = {}
+    
     #params['w_0'] = np.zeros((m,m))
     #params['c'] = 1
     #if knn_edge_cons:
@@ -95,6 +109,7 @@ def construct_graph_on_omega_x0y0(z_x0y0,edge_set_x0y0, q):
     #    params['fix_zeros'] = True
     #    params['edge_mask'] = sp.sparse.coo_matrix((np.ones((edge_index[0].shape)).squeeze(), (edge_index[0],edge_index[1])), shape=Z.shape) #np.zeros(Z.shape) #np.reshape(np.array([1,1,1,1,0,0,0,1,0,0,0,0,0,0,0,0]),(16,1))
     #    params['edge_mask'] = params['edge_mask'] + params['edge_mask'].T
+    params = {}
     params['verbosity'] = 3
     params['maxit'] = 1000
     params['nargout'] = 1
