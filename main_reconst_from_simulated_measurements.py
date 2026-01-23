@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import sensing_models.sd_cassi as sd_cassi
 import utils.gcsi_utils as gcsi_utils
 import reconst_algs.gcsi_algs as gcsi_algs
-
+from graphs.structure_learning import build_kalofolias_graph_adj_mtrx
 
 
 from skimage.transform import rescale
@@ -78,16 +78,20 @@ for j in range(len(xx)):
         omega_k_tilde, omega_k = sdcassi_model.get_system_submtx_pair(k = (x0,y0,height,width))
         print('x0:',x0,'L_s: ', str(omega_k.L_),'size:',omega_k.to_array().size)
 
+        side_img = dataset['pan_img']
+        spectral_img_shape = (n1,n2,L)
         num_neigs = 33 #100
-        z_k, edge_set_k = gcsi_utils.preprocess_side_image_for_graph_learning(dataset['pan_img'],omega_k,n1,n2,L,num_neigs)
-
-      
+        
         #try:
         #    W_G = gcsi_utils.load_graph_on_omega_x0y0(hsdc_name, x0,y0)
         #except:
         #    W_G, theta = gcsi_utils.construct_graph_on_omega_x0y0(z_k,edge_set_k, q=num_neigs)  
             #gcsi_utils.save_graph_on_omega_x0y0(hsdc_name, W_G, x0,y0)
-        W_G, theta = gcsi_utils.construct_graph_on_omega_x0y0(z_k,edge_set_k, q=num_neigs)  
+        #W_G, theta = gcsi_utils.construct_graph_on_omega_x0y0(z_k,edge_set_k, q=num_neigs) 
+
+
+        W_G = build_kalofolias_graph_adj_mtrx(side_img, omega_k, spectral_img_shape, num_neigs) 
+
             
         degrees = np.sum(W_G,axis=1)
         idx_max_degree = np.argmax(degrees.squeeze())
@@ -115,7 +119,7 @@ for j in range(len(xx)):
         #W_ = coo_matrix((np.ones(e[0].shape),(e[0],e[1])), shape = (n,n))
         #W_ = W_.maximum(W_)
 
-        x_hat, solver_info = gcsi_algs.gsm_noiseless_case_estimation(Hmtx.tocsr(), y, (W_G).tocsr(), params = {'alpha' : 10,'tol':1e-5, 'maxiter': 10000})        
+        x_hat, solver_info = gcsi_algs.gsm_noiseless_case_estimation(Hmtx.tocsr(), y, (W_G).tocsr(), params = {'alpha' : 10,'tol':1e-6, 'maxiter': 10000})        
 
         #multi_idx = np.unravel_index(omega_k.to_array(),(n1,n2,L), order = 'F')
 
