@@ -6,6 +6,8 @@ This repository contains both real and simulated datasets to test the methods an
 
 Python implementations of reconstruction methods and usage examples are still being refined so please check constantly for updates.
 
+**Note (Update: 24 Jan 2026):** *Parallel algorithm* for block based spectral image reconstruction on graphs has been implemented. This should be enough to replicate results from my paper. However, I am still understanding the numerical properties of the Python scientific computing libraries. The paper uses Matlab implementations that I haven't released yet.
+
 **Note (Update: 21 Jan 2026):**  The results presented below are for illustrative purposes only and should not be over-interpreted. The codebase is currently under active debugging and ongoing improvement.
 
 ## Project requirements:
