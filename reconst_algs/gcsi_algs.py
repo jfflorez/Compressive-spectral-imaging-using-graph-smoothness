@@ -2,8 +2,8 @@ import numpy as np
 
 import scipy as sp
 import scipy.spatial.distance as sp_sd
-from scipy.sparse.linalg import spsolve, minres, lsqr
-from scipy.sparse import coo_matrix, hstack, vstack, save_npz, load_npz
+from scipy.sparse.linalg import spsolve, minres, lsqr, norm, eigsh
+from scipy.sparse import coo_matrix, hstack, vstack, save_npz, load_npz, spdiags
 
 
 
@@ -35,16 +35,25 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
     """
     
     m, n = H.shape
-    L_G = sp.sparse.spdiags(np.sum(W_G, axis=1).squeeze(), 0, n, n) - W_G
-    
+
+    # Set up KKT system of linear equations
+    L_G = spdiags(np.sum(W_G, axis=1).squeeze(), 0, n, n) - W_G   
     zeros = coo_matrix((m, m), dtype=np.float32).tocsr()
+    
     A = vstack([hstack([L_G, H.T]), hstack([H, zeros])]).tocsr()
-    zeros_b = np.zeros((n, 1))
-    b_0 = np.vstack((zeros_b, y))
-    # minres returns: (x, info) where info is convergence flag
-    result = minres(A, b_0, x0=(A.T @ b_0), rtol=params['tol'], maxiter=params['maxiter'])
+    
+    b = np.vstack((np.zeros((n, 1)), y))
+
+    minres_kwargs, stats = make_minres_kwargs(A, b, params)
+    # Collect some stats about the image patch y for downstream analyses
+    stats.update({'y_var' : y.var(), 'y_mean' : y.mean()})
+
+    result = minres(A, b, **minres_kwargs)
     x_solution, info = result[0], result[1]
-    np.vstack
+    #x_solution = spsolve(A, b_0)
+    #info = 0
+    
+    
     # Decode MINRES info flag
     convergence_status = {
         0: 'converged',
@@ -70,6 +79,7 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
         'tol': params['tol'],
         'maxiter': params['maxiter']
     }
+    metadata.update(stats)
 
     return x_hat, metadata
 
@@ -92,15 +102,23 @@ def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'max
         """
         if not 'maxiter' in params:
              params = {'maxiter': 1000}
+        
         m, n = H.shape
 
-        tau = 0.5*np.min(np.sum(W_G, axis=1).squeeze())
-        D_inv_sq = sp.sparse.spdiags(1/np.sqrt(np.sum(W_G, axis=1).squeeze()), 0 , n , n )
-        L_G = sp.sparse.spdiags(np.ones((n,1)).squeeze(), 0 , n , n ) - D_inv_sq @ (W_G @ D_inv_sq)
+        L_G = spdiags(np.sum(W_G, axis=1).squeeze(), 0, n, n) - W_G  
+        # Uncomment lines below to test normalized graph Laplacian
+        #D_inv_sq = sp.sparse.spdiags(1/np.sqrt(np.sum(W_G, axis=1).squeeze()), 0 , n , n )
+        #L_G = sp.sparse.spdiags(np.ones((n,1)).squeeze(), 0 , n , n ) - D_inv_sq @ (W_G @ D_inv_sq)
 
         A = (H.T @ H) + params['alpha']* L_G 
-        b_0 = H.T @ y
-        x_hat, info = minres(A.tocsr(), b_0, rtol=params['tol'], maxiter=params['maxiter'])
+        b = H.T @ y
+
+        minres_kwargs, stats = make_minres_kwargs(H, y, params)
+        # Collect some stats about the image patch y for downstream analyses
+        stats.update({'y_var' : y.var(), 'y_mean' : y.mean()})
+
+        result = minres(A.tocsr(), b, **minres_kwargs)
+        x_hat, info = result[0], result[1]
 
         # Decode MINRES info flag
         convergence_status = {
@@ -124,5 +142,59 @@ def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'max
             'tol': params['tol'],
             'maxiter': params['maxiter']
         }
+        metadata.update(stats)
 
         return x_hat, metadata
+#def make_minres_kwargs(A, b, params, eig_tol=1e-6, maxiter_eig=200):
+def make_minres_kwargs(A, b, params):
+    """
+    Create keyword arguments for scipy.sparse.linalg.minres that
+    capture iteration count, first/last residuals, and a sparse-safe
+    condition number estimate with timing.
+    """
+
+    stats = {
+        #"residual_norms": [],
+        "num_iters": 0,
+        #"cond_A": None,
+        #"cond_est_time": 0.0,
+        #"lambda_min": None,
+        #"lambda_max": None,
+    }
+
+    # ---- Sparse-safe condition number estimation (timed) ----
+    #t0 = time.perf_counter()
+    #try:
+        # Largest eigenvalue
+    #    lambda_max = eigsh(
+    #        A, k=1, which="LM", tol=eig_tol, maxiter=maxiter_eig, return_eigenvectors=False
+    #    )[0]
+
+        # Smallest eigenvalue
+    #    lambda_min = eigsh(
+    #        A, k=1, which="SM", tol=eig_tol, maxiter=maxiter_eig, return_eigenvectors=False
+    #    )[0]
+
+    #    stats["lambda_max"] = lambda_max
+    #    stats["lambda_min"] = lambda_min
+    #    stats["cond_A"] = lambda_max / lambda_min
+
+    #except Exception:
+    #    stats["cond_A"] = np.nan
+
+    #stats["cond_est_time"] = time.perf_counter() - t0
+    # ---------------------------------------------------------
+
+    def callback(xk):
+        #rk_norm = norm(b - A @ xk)
+        #stats["residual_norms"].append(rk_norm)
+        stats["num_iters"] += 1
+
+    minres_kwargs = {
+        "x0": A.T @ b,
+        "rtol": params["tol"],
+        "maxiter": params["maxiter"],
+        "callback": callback,
+    }
+
+    return minres_kwargs, stats
