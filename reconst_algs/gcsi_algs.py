@@ -3,8 +3,18 @@ import numpy as np
 import scipy as sp
 import scipy.spatial.distance as sp_sd
 from scipy.sparse.linalg import spsolve, minres, lsqr, norm, eigsh
-from scipy.sparse import coo_matrix, hstack, vstack, save_npz, load_npz, spdiags
+from scipy.sparse import coo_matrix, hstack, vstack, save_npz, load_npz, spdiags, eye
 
+def compute_reconst_loss(x, y, H):
+    x_flat = x.flatten()
+    y_flat = y.flatten()
+    r = (y_flat - (H @ x_flat)).flatten()
+    return np.dot(r, r) # returns a scalar
+
+def compute_GTV(x, L_G):
+    # Ensure x is a 1 dimensional array required by the dot function. 
+    x_flat = x.flatten()
+    return np.dot(x_flat, L_G @ x_flat) # returns a scalar
 
 
 def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 10000}):
@@ -44,14 +54,25 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
     
     b = np.vstack((np.zeros((n, 1)), y))
 
-    minres_kwargs, stats = make_minres_kwargs(A, b, params)
-    # Collect some stats about the image patch y for downstream analyses
-    stats.update({'y_var' : y.var(), 'y_mean' : y.mean()})
+    minres_kwargs, callable_dict = make_minres_kwargs(A, b, params)
 
     result = minres(A, b, **minres_kwargs)
     x_solution, info = result[0], result[1]
+    x_hat, x_init = x_solution[0:n], minres_kwargs['x0'][0:n]
+
     #x_solution = spsolve(A, b_0)
     #info = 0
+    # Collect some stats about the image patch y and the solution metrics for downstream analyses
+    # NOTE: downstream code may get affected if the below dicts are not compatible with h5 attribute types
+    data_stats = {'y_var' : y.var(), 'y_mean' : y.mean()}
+    solution_metrics = {
+        'num_iters' : callable_dict['num_iters'],
+        'L2_loss_start' : compute_reconst_loss(x_init,y,H),
+        'L2_loss_end' : compute_reconst_loss(x_hat,y,H),
+        'GTV_start' : compute_GTV(x_init,L_G),
+        'GTV_end' : compute_GTV(x_hat,L_G)
+        }
+    
     
     
     # Decode MINRES info flag
@@ -67,10 +88,7 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
     if not converged:
         print(f'Warning: MINRES {status} (info={info})')
     else:
-        print('Solution converged to desired tolerance.')
-    
-    x_hat = x_solution[0:n]
-    
+        print('Solution converged to desired tolerance.')    
 
     metadata = {
         'converged': converged,
@@ -79,7 +97,8 @@ def gsm_noiseless_case_estimation(H, y, W_G, params={'tol':1e-5, 'maxiter': 1000
         'tol': params['tol'],
         'maxiter': params['maxiter']
     }
-    metadata.update(stats)
+    metadata.update(data_stats)
+    metadata.update(solution_metrics)
 
     return x_hat, metadata
 
@@ -106,6 +125,7 @@ def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'max
         m, n = H.shape
 
         L_G = spdiags(np.sum(W_G, axis=1).squeeze(), 0, n, n) - W_G  
+        #L_G = L_G + 1e-1*eye(n,n)
         # Uncomment lines below to test normalized graph Laplacian
         #D_inv_sq = sp.sparse.spdiags(1/np.sqrt(np.sum(W_G, axis=1).squeeze()), 0 , n , n )
         #L_G = sp.sparse.spdiags(np.ones((n,1)).squeeze(), 0 , n , n ) - D_inv_sq @ (W_G @ D_inv_sq)
@@ -113,12 +133,21 @@ def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'max
         A = (H.T @ H) + params['alpha']* L_G 
         b = H.T @ y
 
-        minres_kwargs, stats = make_minres_kwargs(H, y, params)
-        # Collect some stats about the image patch y for downstream analyses
-        stats.update({'y_var' : y.var(), 'y_mean' : y.mean()})
+        minres_kwargs, callable_dict = make_minres_kwargs(H, y, params)
 
         result = minres(A.tocsr(), b, **minres_kwargs)
-        x_hat, info = result[0], result[1]
+        x_hat, info, x_init = result[0], result[1], minres_kwargs['x0']
+
+        # Collect some stats about the image patch y and the solution metrics for downstream analyses
+        # NOTE: downstream code may get affected if the below dicts are not compatible with h5 attribute types
+        data_stats = {'y_var' : y.var(), 'y_mean' : y.mean()}
+        solution_metrics = {
+            'num_iters' : callable_dict['num_iters'],
+            'L2_loss_start' : compute_reconst_loss(x_init,y,H),
+            'L2_loss_end' : compute_reconst_loss(x_hat,y,H),
+            'GTV_start' : compute_GTV(x_init,L_G),
+            'GTV_end' : compute_GTV(x_hat,L_G)
+            }
 
         # Decode MINRES info flag
         convergence_status = {
@@ -142,7 +171,8 @@ def gsm_noisy_case_estimation(H, y, W_G, params = {'alpha' : 7, 'tol':1e-4, 'max
             'tol': params['tol'],
             'maxiter': params['maxiter']
         }
-        metadata.update(stats)
+        metadata.update(data_stats)
+        metadata.update(solution_metrics)
 
         return x_hat, metadata
 #def make_minres_kwargs(A, b, params, eig_tol=1e-6, maxiter_eig=200):
@@ -153,7 +183,7 @@ def make_minres_kwargs(A, b, params):
     condition number estimate with timing.
     """
 
-    stats = {
+    callback_dict = {
         #"residual_norms": [],
         "num_iters": 0,
         #"cond_A": None,
@@ -188,13 +218,14 @@ def make_minres_kwargs(A, b, params):
     def callback(xk):
         #rk_norm = norm(b - A @ xk)
         #stats["residual_norms"].append(rk_norm)
-        stats["num_iters"] += 1
-
+        callback_dict["num_iters"] += 1
+    n = A.shape[1]
     minres_kwargs = {
         "x0": A.T @ b,
+        #"x0" : np.zeros((n,1)),
         "rtol": params["tol"],
         "maxiter": params["maxiter"],
         "callback": callback,
     }
 
-    return minres_kwargs, stats
+    return minres_kwargs, callback_dict
