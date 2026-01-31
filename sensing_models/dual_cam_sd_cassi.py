@@ -37,6 +37,7 @@ class DualCameraSDCassiModel:
         # Load and validate dataset
         validated_dataset = load_dataset(dataset)
         self.dataset_name = os.path.basename(dataset) if isinstance(dataset, str) else None
+        self.path_to_dataset = dataset if isinstance(dataset, str) else None
 
         # Extract dimensions
         n1, m2, L = validated_dataset['mask'].shape
@@ -84,6 +85,14 @@ class DualCameraSDCassiModel:
     @property
     def Y(self):
         return self.sdcassi_obj.Y
+    
+    def load_X(self):
+        """ Attempts to get the original spectral image X for validation if it exists"""
+        if self.path_to_dataset is None:
+            return None
+
+        dataset = load_dataset(self.path_to_dataset)
+        return dataset.get("X", None)
 
     def _construct_side_system_mtx(self):
         """Internal method to construct side camera system matrix."""
