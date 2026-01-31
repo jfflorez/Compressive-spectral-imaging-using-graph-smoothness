@@ -120,7 +120,7 @@ def build_knn_edges_per_band(signals, spatial_coords, omega_subdomain : SignalSu
     return np.hstack(edge_sets)
 
 
-def build_knn_graph_adj_mtrx(side_img, omega_subdomain : SignalSubDomain, spectral_img_shape, num_neigs=33):
+def build_knn_graph_adj_mtrx(side_img, omega_subdomain : SignalSubDomain, spectral_img_shape, **kwargs):
     """
     Construct kNN graph adjacency matrix from side image.
     
@@ -148,6 +148,7 @@ def build_knn_graph_adj_mtrx(side_img, omega_subdomain : SignalSubDomain, spectr
     )
     
     # Step 2: Build kNN edges using joint features
+    num_neigs= kwargs.get('num_neigs',33)
     edge_set = build_knn_edges_per_band(
         signals, spatial_coords, omega_subdomain, num_neigs
     ) # 2D matrix, where rows are vertex pairs or edges.
@@ -174,7 +175,18 @@ def build_knn_graph_adj_mtrx(side_img, omega_subdomain : SignalSubDomain, spectr
 #    A_G = A_G.maximum(A_G.T)
 #    return A_G #or W_G
 # -------- Definition of Kalofolias graph structure learning method -------------------------------          
-def build_kalofolias_graph_adj_mtrx(side_img, omega_k : SignalSubDomain, spectral_img_shape : tuple[int,int,int], num_neigs = 33):
+def build_kalofolias_graph_adj_mtrx(side_img, omega_k : SignalSubDomain, spectral_img_shape : tuple[int,int,int], **kwargs):
+    """
+    Docstring for build_kalofolias_graph_adj_mtrx
+    
+    :param side_img: Description
+    :param omega_k: Description
+    :type omega_k: SignalSubDomain
+    :param spectral_img_shape: Description
+    :type spectral_img_shape: tuple[int, int, int]
+    :param kwargs: params dict for gl_models.gsp_learn_graph_log_degrees(theta*dist_mtx,a,b,params)
+    
+    """
     n1, n2, L = spectral_img_shape
 
     # Step 1: Extract signals and coordinates. These are graphs signals on omega_k
@@ -183,7 +195,8 @@ def build_kalofolias_graph_adj_mtrx(side_img, omega_k : SignalSubDomain, spectra
     )
     n_vertices, m = signals.shape
 
-    # Step 2: Build kNN edges using joint features
+    # Step 2: Build kNN edges using joint features    
+    num_neigs = kwargs.get('num_neigs',33)
     edge_set_k = build_knn_edges_per_band(
         signals, spatial_coords, omega_k, num_neigs
     )
@@ -200,9 +213,10 @@ def build_kalofolias_graph_adj_mtrx(side_img, omega_k : SignalSubDomain, spectra
     dist_mtx = dist_mtx.maximum(dist_mtx.transpose())
 
     params = {}
-    params['verbosity'] = 3
-    params['maxit'] = 1000
-    params['nargout'] = 1
+    params['verbosity'] = kwargs.get('verbosity',3)
+    params['maxit'] = kwargs.get('maxit',1000)
+    params['nargout'] = kwargs.get('nargout',1)
+
     a, b, theta = 1, 1, 100
     #theta = gl.estimate_theta(D,q)
     W_G = gl_models.gsp_learn_graph_log_degrees(theta*dist_mtx,a,b,params)
@@ -242,7 +256,7 @@ def build_rop_adj_mtrx_per_band(Z, omega_k : SignalSubDomain):
     blocks = []
     for l in wavelength_index:
         z_l = omega_k.extract_vertex_features(Z,l)
-        rinv = np.argsort(z_l,axis=0)
+        rinv = np.argsort(z_l,axis=0,stable=True)
         n = len(rinv)
         A_G = rank_order_path_adjacency(n,rinv)
         blocks.append(A_G)
@@ -250,7 +264,7 @@ def build_rop_adj_mtrx_per_band(Z, omega_k : SignalSubDomain):
     return block_diag(blocks, format='csr')
     
 
-def build_rop_graph_adj_mtrx(pan_img, Omega_k):#DCSDCassiModelObj : DualCameraSDCassiModel, block):
+def build_rop_graph_adj_mtrx(pan_img, Omega_k, **kwargs):#DCSDCassiModelObj : DualCameraSDCassiModel, block):
     #x0, y0, height, width = block
 
     # Omega_tilde_k, Omega_k = DCSDCassiModelObj.sdcassi_obj.get_system_submtx_pair( k = (x0,y0,height,width))
