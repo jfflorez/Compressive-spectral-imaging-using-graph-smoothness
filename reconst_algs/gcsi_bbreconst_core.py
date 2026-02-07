@@ -170,8 +170,11 @@ def generate_block_reconst_tasks(
     """
     n1, n2, L = SDCassiModelObj.get_spectral_image_shape()
     m2 = n2+L-1
-    xx = np.arange(0, m2, step = (1 - overlap) * width, dtype=int)
-    yy = np.arange(0, n1, step = (1 - overlap) * height, dtype=int)
+    overlap = min(overlap,0.9) # overlap cannot be greater than or equal to 1
+    step_x = int(round((1 - overlap) * width))
+    step_y = int(round((1 - overlap) * height))
+    xx = np.arange(0, m2, step = step_x, dtype=int)
+    yy = np.arange(0, n1, step = step_y, dtype=int)
 
     return [(x0, y0, min(height,n1-y0), min(width,m2-x0)) for x0 in xx for y0 in yy]  
 
@@ -315,20 +318,19 @@ def ingestion_process(path_to_file: str, q: mp.Queue):
     with h5py.File(path_to_tmpfile, "r+") as aggr_file:
         X_hat = np.zeros((n1, n2, L), dtype=np.float64)
         C = np.zeros((n1, n2, L), dtype=np.int32)
-
-        total_num_blocks = aggr_file.attrs["number_of_blocks"]
+        
+        total_num_blocks = aggr_file.attrs.get('number_of_blocks', 0)
         block_counter = 0
-
         while True:
             result = q.get()  # blocking
             if result is None:
                 break
 
-            output_filepath = result["output_filepath"]
+            path_to_block_results = result["output_filepath"]
             block_id = result["block_id"]
-            group_name = f"block_{block_id}"
+            group_name = f"block_estimates/block_{block_id}"
 
-            with h5py.File(output_filepath, "r") as f:
+            with h5py.File(path_to_block_results, "r") as f:
                 x_hat = f["x_hat"][:]
                 multi_idx = tuple(f["multi_idx"][:])
 
@@ -342,19 +344,22 @@ def ingestion_process(path_to_file: str, q: mp.Queue):
 
         # Safe division
         X_hat = np.divide(X_hat, C, out=np.zeros_like(X_hat), where=C > 0)
-
+        
         if "X_hat" in aggr_file:
             del aggr_file["X_hat"]
         aggr_file.create_dataset("X_hat", data=X_hat)
-
         end_time = time.perf_counter()
-        aggr_file.attrs["aggregation_time"] = (
-            aggr_file.attrs.get("aggregation_time", 0.0) + (end_time - start_time)
+        
+        aggr_file.attrs["aggregation_duration"] = (
+            aggr_file.attrs.get("aggregation_duration", 0.0) + (end_time - start_time)
+        )
+        aggr_file.attrs["block_counter"] = (
+            aggr_file.attrs.get("block_counter", 0) + block_counter
         )
 
     # Promote tmp file if complete
-    if block_counter == total_num_blocks:
-        os.replace(path_to_tmpfile, path_to_file)
+    #if block_counter == total_num_blocks:
+    os.replace(path_to_tmpfile, path_to_file)
 
     print('----- End of Data Ingestion Process --------')
     print(f"Data ingestion elapsed time: {end_time - start_time}")

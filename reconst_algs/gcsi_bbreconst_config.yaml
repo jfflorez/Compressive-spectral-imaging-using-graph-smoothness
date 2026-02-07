@@ -1,0 +1,15 @@
+dataset_file : 'datasets/simulated_data_HSDC2_DB_Oct112019_2_OE.mat' # simulated_data_HSDC4_DB_Oct122019_2_OE.mat', #'datasets/real_data_SCN_1_scale_2_June032021_OE.mat',#'datasets/simulated_data_HSDC4_DB_Oct122019_2_OE.mat',#'simulated_data_HSDC2_DB_Oct112019_2_OE.mat',#'simulated_data_HSDC3_DB_Oct112019_1_OE.mat',#'simulated_data_HSDC1_DB_Oct092019_5_OE.mat', #'real_data_SCN_1_scale_2_June032021_OE.mat',
+suffix : null # Used to identify reconstruction outputs and pair them with the config hash
+number_of_processors: 4
+block_width: 32
+block_height: 32
+block_overlap : 0.5
+graph_params: 
+  graph_type : 'ROPs' # or 'Kalofolias'
+  #num_neigs : 33 # Uncomment when graph_type is set as 'Kalofolias'
+display_slice: 5 # slice for plotting
+solver_params : 
+  alpha : 7.19
+  maxiter: 10000 
+  tol : 1.e-7 
+  noisy_meas : False

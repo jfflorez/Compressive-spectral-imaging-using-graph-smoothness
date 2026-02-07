@@ -89,12 +89,12 @@ def run_worker_pool(blocks, model_obj, tmp_dir, queue, n_procs, graph_params, so
 def next_versioned_path(
     dataset_name,
     results_dir="results",
-    suffix="_reconst_",
+    suffix="reconst",
     ext_override=".h5"
     ):
     """
     Create a non-overwriting, versioned filepath:
-    <base><suffix>v<version><ext>
+    <base>_<suffix>_v<version><ext>
 
     dataset_name (str) : is the file path of the cassi dataset to be processed
     """
@@ -105,7 +105,7 @@ def next_versioned_path(
     ext = ext_override or ext
 
     pattern = re.compile(
-        rf"^{re.escape(base)}{re.escape(suffix)}v(\d+){re.escape(ext)}$"
+        rf"^{re.escape(base)}{re.escape(f'_{suffix}_')}v(\d+){re.escape(ext)}$"
         # ^   start of filename
         # ()  capture group for version number
         # \d+ one or more digits
@@ -123,14 +123,15 @@ def next_versioned_path(
 
     return os.path.join(
         results_dir,
-        f"{base}{suffix}v{next_version}{ext}"
+        f"{base}_{suffix}_v{next_version:03d}{ext}"
     )
 
 
 # ------------------------------------------------------------------
 # Main function
 # ------------------------------------------------------------------
-def main(config_dict_or_path: Union[dict, str] = None):
+def main(config_file : Union[dict, str] = None,
+         results_dir : str = 'results/'):
 
 
     """
@@ -142,8 +143,8 @@ def main(config_dict_or_path: Union[dict, str] = None):
 
     # 1. Default parameters
     defaults = {
-        'results_dir': 'results/',
-        'dataset_name': 'datasets/simulated_data_HSDC2_DB_Oct112019_2_OE.mat',
+        #'results_dir': 'results/',
+        'dataset_file': 'datasets/simulated_data_HSDC2_DB_Oct112019_2_OE.mat',
         'number_of_processors': 4,
         'block_width': 32,
         'block_height': 32,
@@ -156,32 +157,32 @@ def main(config_dict_or_path: Union[dict, str] = None):
     # 2. Handle config input
     config = deepcopy(defaults)  # always start with defaults
 
-    if config_dict_or_path is not None and isinstance(config_dict_or_path, str):
+    if config_file is not None and isinstance(config_file, str):
         # config is a YAML file path
-        if not os.path.isfile(config_dict_or_path):
-            raise FileNotFoundError(f"Config file not found: {config_dict_or_path}")
-        with open(config_dict_or_path, 'r') as f:
+        if not os.path.isfile(config_file):
+            raise FileNotFoundError(f"Config file not found: {config_file}")
+        with open(config_file, 'r') as f:
             yaml_cfg = yaml.safe_load(f)
         # Merge YAML on top of defaults
         config.update(yaml_cfg)
-    elif config_dict_or_path is not None and isinstance(config, dict):
+    elif config_file is not None and isinstance(config, dict):
         # config is a dict → merge on top of defaults
-        config.update(config_dict_or_path)
+        config.update(config_file)
     else:
         raise TypeError("config must be a dict or a path to a YAML file")
 
     # ------------------------------------------------------------------
     # Paths
     # ------------------------------------------------------------------
-    
-    path_to_dataset = os.path.normpath(config['dataset_name']).replace(os.sep, '/')
+
+    path_to_dataset = os.path.normpath(config['dataset_file']).replace(os.sep, '/')
 
     if not os.path.isfile(path_to_dataset):
         raise FileNotFoundError(f'{path_to_dataset} could not be found. Place dataset file in datasets/ folder')
 
     path_to_file = next_versioned_path(path_to_dataset,
-                                       config['results_dir'],
-                                       suffix="_reconst_",
+                                       results_dir,
+                                       suffix=config.get('suffix') if not None else '',
                                        ext_override=".h5")
     tmp_dir = prepare_tmp_dir(path_to_file)
 
