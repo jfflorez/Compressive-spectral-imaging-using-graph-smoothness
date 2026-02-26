@@ -1,0 +1,11 @@
+{
+  "title": "Reconstruction of dataset: simulated_data_HSDC2_DB_Oct112019_2_OE.mat",
+  "shape": [
+    512,
+    512,
+    31
+  ],
+  "dtype": "float64",
+  "dataset_name": "simulated_data_HSDC2_DB_Oct112019_2_OE.mat",
+  "number_of_blocks": 1088
+}

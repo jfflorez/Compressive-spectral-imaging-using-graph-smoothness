@@ -1,0 +1,15 @@
+dataset_file: datasets/simulated_data_HSDC2_DB_Oct112019_2_OE.mat
+suffix: null
+number_of_processors: 1
+block_width: 32
+block_height: 32
+block_overlap: 0.5
+graph_params:
+  graph_type: Kalofolias
+  num_neigs: 33
+display_slice: 5
+solver_params:
+  alpha: 7.19
+  maxiter: 10000
+  tol: 1.0e-07
+  noisy_meas: false
