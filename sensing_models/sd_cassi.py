@@ -81,8 +81,8 @@ class SingleDisperserCassiModel:
     def get_spectral_image_shape(self):
         return self.n1, self.n2, self.L
     
-    def load_system_mtx(self):
-        self.Hmtx = construct_system_mtx(self.mask,self.n1,self.n2,self.L,self.disp_dir)
+    #def load_system_mtx(self):
+    #    self.Hmtx = construct_system_mtx(self.mask,self.n1,self.n2,self.L,self.disp_dir)
 
     @property
     def Hmtx(self):
