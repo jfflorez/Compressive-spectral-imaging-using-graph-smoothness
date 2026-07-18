@@ -1,3 +1,6 @@
 [submodule "utils/myems"]
 	path = utils/myems
 	url = https://github.com/jfflorez/myems.git
+[submodule "utils/learngraph"]
+	path = utils/learngraph
+	url = https://github.com/jfflorez/learngraph.git
