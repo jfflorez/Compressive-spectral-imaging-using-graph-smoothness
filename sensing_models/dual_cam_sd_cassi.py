@@ -56,7 +56,7 @@ class DualCameraSDCassiModel:
         self.L = L
         self.spectral_sen = validated_dataset['spectral_sen'] if 'spectral_sen' in validated_dataset.keys() else np.ones((1,L))
         self.K = self.spectral_sen.shape[0]
-
+        self.lambda_calib = validated_dataset['lambda_calib']
         # Load snapshots
         self.load_real_snapshots(validated_dataset['Y'],validated_dataset['pan_img'])
 
