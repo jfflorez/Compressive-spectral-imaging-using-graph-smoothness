@@ -12,7 +12,7 @@ from graphs.structure_learning import build_kalofolias_graph_adj_mtrx
 
 from skimage.transform import rescale
 from utils.datasets import load_dataset
-
+from utils.vis import generate_mosaic_from_hsi
 
 dataset_dir = 'datasets'
 dataset_filename = 'simulated_data_HSDC1_DB_Oct092019_5_OE.mat'
@@ -26,6 +26,7 @@ print(dataset.keys())
 
 dataset['X'] = rescale(dataset['X'][:,:,0:26], (0.5,0.5,1), anti_aliasing=True)
 dataset['pan_img'] = rescale(dataset['pan_img'], 0.5, anti_aliasing=True)
+lambda_calib = dataset['lambda_calib'][0,0:26]
 
 L  = dataset['X'].shape[2]
 n1 = dataset['X'].shape[0]
@@ -48,7 +49,7 @@ mask = dataset1['mask']
 #disp_dir = 'left2right'
 disp_dir = dataset1['disp_dir']
 sdcassi_model = sd_cassi.SingleDisperserCassiModel(n1,n2,L,mask,disp_dir)
-sdcassi_model.load_system_mtx()
+#sdcassi_model.load_system_mtx()
 #sdcassi_model.load_real_snapshot(dataset['Y'])
 
 sdcassi_model.take_simulated_snapshot(dataset['X'],SNR=np.inf)
@@ -90,7 +91,7 @@ for j in range(len(xx)):
         #W_G, theta = gcsi_utils.construct_graph_on_omega_x0y0(z_k,edge_set_k, q=num_neigs) 
 
 
-        W_G = build_kalofolias_graph_adj_mtrx(side_img, omega_k, spectral_img_shape, num_neigs) 
+        W_G = build_kalofolias_graph_adj_mtrx(side_img, omega_k, spectral_img_shape, num_neigs=num_neigs) 
 
             
         degrees = np.sum(W_G,axis=1)
@@ -99,11 +100,11 @@ for j in range(len(xx)):
         multi_idx = np.unravel_index(omega_k.to_array(),(n1,n2,L), order = 'F')
 
         multi_idx_max_degree = np.unravel_index(omega_k.to_array()[idx_max_degree],(n1,n2,L), order = 'F')
-
-        Hmtx = sdcassi_model.Hmtx.tocsr()[omega_k_tilde,:]
-        Hmtx = Hmtx[:,omega_k.to_array()]
-        m, n = Hmtx.shape
-        y = Y[np.unravel_index(omega_k_tilde,(n1,n2+L-1), order = 'F')].reshape((m,1),order = 'F')  
+        
+        H_k = sdcassi_model.Hmtx.tocsr()[omega_k_tilde,:]
+        H_k = H_k[:,omega_k.to_array()]
+        m, n = H_k.shape
+        y_k = Y[np.unravel_index(omega_k_tilde,(n1,n2+L-1), order = 'F')].reshape((m,1),order = 'F')  
 
         """     plt.figure()
                 ax0 = plt.gca()
@@ -119,7 +120,7 @@ for j in range(len(xx)):
         #W_ = coo_matrix((np.ones(e[0].shape),(e[0],e[1])), shape = (n,n))
         #W_ = W_.maximum(W_)
 
-        x_hat, solver_info = gcsi_algs.gsm_noiseless_case_estimation(Hmtx.tocsr(), y, (W_G).tocsr(), params = {'alpha' : 10,'tol':1e-6, 'maxiter': 10000})        
+        x_hat, solver_info = gcsi_algs.gsm_noiseless_case_estimation(H_k, y_k, (W_G).tocsr(), params = {'alpha' : 10,'tol':1e-6, 'maxiter': 10000})        
 
         #multi_idx = np.unravel_index(omega_k.to_array(),(n1,n2,L), order = 'F')
 
@@ -183,6 +184,12 @@ os.makedirs(output_dir, exist_ok=True)
 dataset_name = dataset_filename.replace(".mat", "")
 fig.savefig(
     os.path.join(output_dir, f"error_images_avgPSNR_{psnr_val[0]:.2f}dB_for_{dataset_name}.svg"),
+    dpi=300
+)
+
+hsi_mosaic_fig = generate_mosaic_from_hsi(X_hat,lambda_calib.flatten())
+hsi_mosaic_fig.savefig(
+    os.path.join(output_dir, f"hsi_mosaic_{psnr_val[0]:.2f}dB_for_{dataset_name}.svg"),
     dpi=300
 )
 
