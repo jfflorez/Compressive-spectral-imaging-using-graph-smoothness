@@ -33,6 +33,8 @@ You should get the following visualization:
 
 <img src="figures\error_images_avgPSNR_27.54dB_for_simulated_data_HSDC1_DB_Oct092019_5_OE.svg" alt="Architecture" width="300"/>
 
+<img src="figures\hsi_mosaic_29.60dB_for_simulated_data_HSDC1_DB_Oct092019_5_OE.svg" alt="Architecture" width="300"/>
+
 ## New Experiments
 
 0. Multiconfiguration study of parallel efficiency in block-based spectral image reconstruction. The study analyzes scalability, computational overhead, and runtime behavior across different graph constructions and worker pool sizes.
